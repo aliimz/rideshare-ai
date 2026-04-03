@@ -80,6 +80,7 @@ const App = () => {
   const [rideStatus,    setRideStatus]    = useState('idle');
   const [toasts,        setToasts]        = useState([]);
   const [usingMockData, setUsingMockData] = useState(false);
+  const [mobileTab,     setMobileTab]     = useState('map'); // 'map' | 'panel'
 
   // ── Toast helpers ─────────────────────────────────────────────────────────
   const addToast = useCallback((message, type = 'info') => {
@@ -208,27 +209,34 @@ const App = () => {
       {/* ── Body: sidebar + map ─────────────────────────────────────────── */}
       <div className="flex flex-1 overflow-hidden">
 
-        {/* Sidebar */}
-        <div className="w-[380px] flex-shrink-0 border-r border-slate-700/60 overflow-hidden">
+        {/* Sidebar — hidden on mobile when map tab active, full width when panel tab active, fixed on desktop */}
+        <div className={`
+          flex-shrink-0 border-r border-slate-700/60 overflow-hidden flex-col
+          w-full md:w-[380px]
+          ${mobileTab === 'panel' ? 'flex' : 'hidden'} md:flex
+        `}>
           <Sidebar
             drivers={drivers}
             matchedDriver={matchedDriver}
             priceData={priceData}
             loading={loading}
             rideStatus={rideStatus}
-            onRequestRide={handleRequestRide}
+            onRequestRide={() => { handleRequestRide(); setMobileTab('map'); }}
           />
         </div>
 
-        {/* Map */}
-        <div className="flex-1 relative">
+        {/* Map — full screen on mobile when map tab active */}
+        <div className={`
+          flex-1 relative flex-col
+          ${mobileTab === 'map' ? 'flex' : 'hidden'} md:flex
+        `}>
           <MapView
             drivers={drivers}
             matchedDriver={matchedDriver}
           />
 
-          {/* Map overlay: model info badge */}
-          <div className="absolute bottom-6 right-4 z-[1000] flex flex-col gap-2 items-end pointer-events-none">
+          {/* Map overlay: model info badge — hidden on small screens */}
+          <div className="absolute bottom-6 right-4 z-[1000] hidden sm:flex flex-col gap-2 items-end pointer-events-none">
             <div className="bg-[#0f172a]/90 backdrop-blur border border-slate-700/60 rounded-xl px-3 py-2 text-xs text-slate-400 shadow-xl">
               <div className="flex items-center gap-2 font-medium text-slate-300 mb-1">
                 <span>🤖</span> AI Engine
@@ -268,8 +276,31 @@ const App = () => {
         </div>
       </div>
 
+      {/* ── Mobile bottom tab bar (hidden on md+) ───────────────────────── */}
+      <nav className="md:hidden flex-shrink-0 flex border-t border-slate-700/60 bg-[#1e293b]">
+        <button
+          onClick={() => setMobileTab('map')}
+          className={`flex-1 flex flex-col items-center justify-center py-3 gap-0.5 text-xs font-medium transition-colors
+            ${mobileTab === 'map' ? 'text-green-400' : 'text-slate-500'}`}
+        >
+          <span className="text-xl">🗺️</span>
+          Map
+        </button>
+        <button
+          onClick={() => setMobileTab('panel')}
+          className={`relative flex-1 flex flex-col items-center justify-center py-3 gap-0.5 text-xs font-medium transition-colors
+            ${mobileTab === 'panel' ? 'text-green-400' : 'text-slate-500'}`}
+        >
+          <span className="text-xl">🚀</span>
+          Ride
+          {rideStatus === 'matched' && (
+            <span className="absolute top-2 right-8 w-2 h-2 rounded-full bg-green-500" />
+          )}
+        </button>
+      </nav>
+
       {/* ── Toast stack ─────────────────────────────────────────────────── */}
-      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[2000] flex flex-col gap-2 items-center">
+      <div className="fixed bottom-16 md:bottom-6 left-1/2 -translate-x-1/2 z-[2000] flex flex-col gap-2 items-center">
         {toasts.map((toast) => (
           <Toast
             key={toast.id}

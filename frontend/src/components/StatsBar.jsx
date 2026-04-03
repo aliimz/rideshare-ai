@@ -51,6 +51,7 @@ const StatsBar = ({ drivers = [] }) => {
         flex items-stretch divide-x divide-slate-700/60
         bg-[#1e293b] border-b border-slate-700/60
         text-slate-300 text-sm select-none
+        overflow-x-auto scrollbar-none
       "
     >
       <StatItem

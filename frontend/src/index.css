@@ -4,6 +4,10 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Scrollbar hide utility ─────────────────────── */
+.scrollbar-none::-webkit-scrollbar { display: none; }
+.scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
+
 /* ── Base resets ────────────────────────────────── */
 *, *::before, *::after {
   box-sizing: border-box;
