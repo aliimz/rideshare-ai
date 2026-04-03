@@ -4,20 +4,20 @@ import Sidebar from './components/Sidebar.jsx';
 import StatsBar from './components/StatsBar.jsx';
 import { getDrivers, matchRide, getPrice } from './services/api.js';
 
-// ── Karachi rider position ────────────────────────────────────────────────────
-const RIDER_LAT = 24.8607;
-const RIDER_LNG = 67.0011;
+// ── Lahore rider position ─────────────────────────────────────────────────────
+const RIDER_LAT = 31.5204;
+const RIDER_LNG = 74.3587;
 
 // ── Mock data fallback (used when backend is offline) ─────────────────────────
 const MOCK_DRIVERS = [
-  { id: 1, name: 'Ahmed Khan',    lat: 24.8720, lng: 67.0120, rating: 4.8, vehicle_type: 'sedan',  available: true,  distance_km: 1.2, eta_minutes: 4,  total_trips: 512 },
-  { id: 2, name: 'Bilal Raza',    lat: 24.8550, lng: 66.9950, rating: 4.6, vehicle_type: 'suv',    available: true,  distance_km: 2.1, eta_minutes: 7,  total_trips: 287 },
-  { id: 3, name: 'Farrukh Ali',   lat: 24.8800, lng: 67.0300, rating: 4.9, vehicle_type: 'luxury', available: true,  distance_km: 2.8, eta_minutes: 9,  total_trips: 741 },
-  { id: 4, name: 'Sara Mirza',    lat: 24.8450, lng: 67.0200, rating: 4.4, vehicle_type: 'sedan',  available: false, distance_km: 3.3, eta_minutes: 11, total_trips: 198 },
-  { id: 5, name: 'Usman Tariq',   lat: 24.8650, lng: 67.0400, rating: 4.7, vehicle_type: 'bike',   available: true,  distance_km: 1.8, eta_minutes: 5,  total_trips: 334 },
-  { id: 6, name: 'Nadia Sheikh',  lat: 24.8900, lng: 66.9900, rating: 4.5, vehicle_type: 'van',    available: true,  distance_km: 3.6, eta_minutes: 12, total_trips: 156 },
-  { id: 7, name: 'Kamran Malik',  lat: 24.8380, lng: 67.0050, rating: 4.3, vehicle_type: 'sedan',  available: false, distance_km: 4.1, eta_minutes: 14, total_trips: 422 },
-  { id: 8, name: 'Zara Hussain',  lat: 24.8700, lng: 66.9800, rating: 4.9, vehicle_type: 'suv',    available: true,  distance_km: 2.5, eta_minutes: 8,  total_trips: 603 },
+  { id: 1, name: 'Ahmed Khan',    lat: 31.5320, lng: 74.3700, rating: 4.8, vehicle_type: 'sedan',  available: true,  distance_km: 1.2, eta_minutes: 4,  total_trips: 512 },
+  { id: 2, name: 'Bilal Raza',    lat: 31.5100, lng: 74.3450, rating: 4.6, vehicle_type: 'suv',    available: true,  distance_km: 2.1, eta_minutes: 7,  total_trips: 287 },
+  { id: 3, name: 'Farrukh Ali',   lat: 31.5450, lng: 74.3800, rating: 4.9, vehicle_type: 'luxury', available: true,  distance_km: 2.8, eta_minutes: 9,  total_trips: 741 },
+  { id: 4, name: 'Sara Mirza',    lat: 31.5050, lng: 74.3650, rating: 4.4, vehicle_type: 'sedan',  available: false, distance_km: 3.3, eta_minutes: 11, total_trips: 198 },
+  { id: 5, name: 'Usman Tariq',   lat: 31.5250, lng: 74.3900, rating: 4.7, vehicle_type: 'bike',   available: true,  distance_km: 1.8, eta_minutes: 5,  total_trips: 334 },
+  { id: 6, name: 'Nadia Sheikh',  lat: 31.5500, lng: 74.3400, rating: 4.5, vehicle_type: 'van',    available: true,  distance_km: 3.6, eta_minutes: 12, total_trips: 156 },
+  { id: 7, name: 'Kamran Malik',  lat: 31.4950, lng: 74.3550, rating: 4.3, vehicle_type: 'sedan',  available: false, distance_km: 4.1, eta_minutes: 14, total_trips: 422 },
+  { id: 8, name: 'Zara Hussain',  lat: 31.5300, lng: 74.3300, rating: 4.9, vehicle_type: 'suv',    available: true,  distance_km: 2.5, eta_minutes: 8,  total_trips: 603 },
 ];
 
 const MOCK_MATCH = {
@@ -175,7 +175,7 @@ const App = () => {
               <span className="text-green-400">AI</span>
             </span>
             <p className="text-[10px] text-slate-500 leading-none -mt-0.5">
-              Karachi Intelligent Transport
+              Lahore Intelligent Transport
             </p>
           </div>
         </div>
@@ -183,7 +183,7 @@ const App = () => {
         {/* Centre badge */}
         <div className="hidden sm:flex items-center gap-2 bg-slate-800/60 border border-slate-700/50 rounded-full px-4 py-1.5">
           <span className="text-xs text-slate-400">📍</span>
-          <span className="text-xs font-medium text-slate-300">Karachi, Pakistan</span>
+          <span className="text-xs font-medium text-slate-300">Lahore, Pakistan</span>
         </div>
 
         {/* AI status */}
@@ -244,7 +244,7 @@ const App = () => {
               <div className="space-y-0.5">
                 <p>Model: <span className="text-green-400">Random Forest</span></p>
                 <p>Features: <span className="text-slate-200">Distance, Rating, Demand</span></p>
-                <p>City: <span className="text-slate-200">Karachi, PKT</span></p>
+                <p>City: <span className="text-slate-200">Lahore, PKT</span></p>
               </div>
             </div>
           </div>

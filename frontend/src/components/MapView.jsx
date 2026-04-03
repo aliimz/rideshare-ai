@@ -18,8 +18,8 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
 });
 
-// ── Karachi centre ────────────────────────────────────────────────────────────
-const KARACHI_CENTER = [24.8607, 67.0011];
+// ── Lahore centre ─────────────────────────────────────────────────────────────
+const KARACHI_CENTER = [31.5204, 74.3587];
 
 // ── Icon factories ────────────────────────────────────────────────────────────
 const createDriverIcon = (available, isMatched) => {
@@ -161,7 +161,7 @@ const MapView = ({ drivers = [], matchedDriver = null }) => {
         <Popup>
           <div className="text-center py-1">
             <p className="font-semibold text-blue-400 text-sm">📍 Your Location</p>
-            <p className="text-slate-400 text-xs mt-0.5">Karachi City Centre</p>
+            <p className="text-slate-400 text-xs mt-0.5">Lahore City Centre</p>
           </div>
         </Popup>
       </Marker>

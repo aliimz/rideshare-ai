@@ -140,7 +140,7 @@ class RideMatchingService:
         scored = self.score_drivers(rider_lat, rider_lng, available)
         best_driver, confidence, distance_km = scored[0]
 
-        # ETA: assume average speed of 20 km/h in Karachi traffic
+        # ETA: assume average speed of 20 km/h in Lahore traffic
         eta_minutes = max(1, round((distance_km / 20.0) * 60))
 
         explanation = (

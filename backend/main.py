@@ -12,7 +12,7 @@ from backend.api.routes import router
 
 app = FastAPI(
     title="RideShare AI",
-    description="AI-powered ride-sharing demo backend for Karachi",
+    description="AI-powered ride-sharing demo backend for Lahore",
     version="1.0.0",
 )
 

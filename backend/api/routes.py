@@ -63,54 +63,56 @@ def calculate_price(request: PriceRequest) -> PriceResult:
     return _pricing_service.calculate_price(request.distance_km, request.demand_level)
 
 
-@router.get("/heatmap", summary="Get demand heatmap points for Karachi")
+@router.get("/heatmap", summary="Get demand heatmap points for Lahore")
 def get_heatmap() -> List[dict]:
     """
-    Return demand hotspot points across Karachi for visualisation.
+    Return demand hotspot points across Lahore for visualisation.
     Each point has lat, lng, and intensity (0.0–1.0).
     """
     hotspots = [
-        # Central Business District / Saddar
-        {"lat": 24.8607, "lng": 67.0011, "intensity": 0.95},
-        {"lat": 24.8580, "lng": 67.0040, "intensity": 0.88},
-        # Clifton / Defence
-        {"lat": 24.8138, "lng": 67.0300, "intensity": 0.90},
-        {"lat": 24.8200, "lng": 67.0450, "intensity": 0.85},
-        {"lat": 24.8050, "lng": 67.0380, "intensity": 0.78},
-        # North Nazimabad
-        {"lat": 24.9200, "lng": 67.0350, "intensity": 0.72},
-        {"lat": 24.9350, "lng": 67.0420, "intensity": 0.65},
-        # Gulshan-e-Iqbal
-        {"lat": 24.9200, "lng": 67.0950, "intensity": 0.80},
-        {"lat": 24.9100, "lng": 67.1100, "intensity": 0.74},
-        # Korangi Industrial Area
-        {"lat": 24.8200, "lng": 67.1300, "intensity": 0.60},
-        {"lat": 24.8050, "lng": 67.1450, "intensity": 0.55},
-        # Karachi Airport / PAF Base
-        {"lat": 24.9008, "lng": 67.1681, "intensity": 0.82},
-        # Malir
-        {"lat": 24.8800, "lng": 67.2000, "intensity": 0.50},
-        # Orangi Town
-        {"lat": 24.9500, "lng": 66.9800, "intensity": 0.67},
-        {"lat": 24.9600, "lng": 66.9700, "intensity": 0.58},
-        # Lyari
-        {"lat": 24.8550, "lng": 66.9850, "intensity": 0.70},
-        # Landhi
-        {"lat": 24.8450, "lng": 67.2200, "intensity": 0.45},
-        # F.B. Area / Gulberg
-        {"lat": 24.9000, "lng": 67.0650, "intensity": 0.75},
-        # Shahrah-e-Faisal corridor
-        {"lat": 24.8750, "lng": 67.0650, "intensity": 0.88},
-        {"lat": 24.8650, "lng": 67.0500, "intensity": 0.83},
-        # Karachi Port / Kemari
-        {"lat": 24.8400, "lng": 66.9800, "intensity": 0.62},
-        # Gulistan-e-Jauhar
-        {"lat": 24.9050, "lng": 67.1350, "intensity": 0.76},
-        # University Road
-        {"lat": 24.9300, "lng": 67.1000, "intensity": 0.70},
-        # DHA Phase 8 / Khayaban
-        {"lat": 24.7900, "lng": 67.0700, "intensity": 0.84},
-        # Scheme 33
-        {"lat": 24.9700, "lng": 67.1300, "intensity": 0.48},
+        # Mall Road / City Centre
+        {"lat": 31.5204, "lng": 74.3587, "intensity": 0.95},
+        {"lat": 31.5180, "lng": 74.3620, "intensity": 0.88},
+        # Gulberg
+        {"lat": 31.5120, "lng": 74.3290, "intensity": 0.90},
+        {"lat": 31.5090, "lng": 74.3350, "intensity": 0.85},
+        # DHA Lahore
+        {"lat": 31.4697, "lng": 74.3936, "intensity": 0.82},
+        {"lat": 31.4750, "lng": 74.4000, "intensity": 0.78},
+        # Johar Town
+        {"lat": 31.4700, "lng": 74.2800, "intensity": 0.80},
+        {"lat": 31.4650, "lng": 74.2750, "intensity": 0.74},
+        # Bahria Town
+        {"lat": 31.3656, "lng": 74.1780, "intensity": 0.70},
+        {"lat": 31.3700, "lng": 74.1850, "intensity": 0.65},
+        # Lahore Airport (Allama Iqbal)
+        {"lat": 31.5216, "lng": 74.4036, "intensity": 0.88},
+        # Model Town
+        {"lat": 31.4840, "lng": 74.3180, "intensity": 0.76},
+        # Wapda Town
+        {"lat": 31.4550, "lng": 74.2650, "intensity": 0.68},
+        # Cavalry Ground
+        {"lat": 31.5350, "lng": 74.3800, "intensity": 0.72},
+        # Cantt / Shadman
+        {"lat": 31.5430, "lng": 74.3290, "intensity": 0.84},
+        {"lat": 31.5380, "lng": 74.3200, "intensity": 0.79},
+        # Garden Town
+        {"lat": 31.5060, "lng": 74.3220, "intensity": 0.75},
+        # Township
+        {"lat": 31.4770, "lng": 74.2590, "intensity": 0.60},
+        # Iqbal Town
+        {"lat": 31.4930, "lng": 74.2980, "intensity": 0.71},
+        # Faisal Town
+        {"lat": 31.4860, "lng": 74.2870, "intensity": 0.66},
+        # Raiwind Road corridor
+        {"lat": 31.4400, "lng": 74.3100, "intensity": 0.55},
+        # Thokar Niaz Baig
+        {"lat": 31.4230, "lng": 74.2760, "intensity": 0.50},
+        # GT Road / Shahdara
+        {"lat": 31.5900, "lng": 74.3450, "intensity": 0.62},
+        # Allama Iqbal Town
+        {"lat": 31.4980, "lng": 74.3060, "intensity": 0.73},
+        # Liberty Market
+        {"lat": 31.5140, "lng": 74.3380, "intensity": 0.91},
     ]
     return hotspots
