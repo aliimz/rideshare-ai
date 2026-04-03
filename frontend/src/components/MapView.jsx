@@ -109,9 +109,8 @@ const MapController = ({ matchedDriver }) => {
         { animate: true, duration: 1.4 }
       );
     }
-    if (!matchedDriver && prevMatched.current) {
+    if (!matchedDriver) {
       prevMatched.current = null;
-      map.flyTo(KARACHI_CENTER, 13, { animate: true, duration: 1 });
     }
   }, [matchedDriver, map]);
 
