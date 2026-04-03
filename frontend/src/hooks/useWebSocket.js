@@ -10,7 +10,9 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 
-const WS_BASE_URL = 'ws://localhost:8080/ws';
+const WS_BASE_URL = import.meta.env.VITE_WS_URL
+  ? `${import.meta.env.VITE_WS_URL}/ws`
+  : 'ws://localhost:8080/ws';
 const RECONNECT_DELAY_MS = 3_000;
 
 /**
