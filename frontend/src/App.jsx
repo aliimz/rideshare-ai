@@ -133,7 +133,13 @@ const App = () => {
       } else {
         // Real backend calls
         const matchResponse = await matchRide(RIDER_LAT, RIDER_LNG);
-        matched = matchResponse?.driver ?? matchResponse;
+        // Merge driver fields with match metadata (confidence, eta, explanation)
+        matched = {
+          ...(matchResponse?.driver ?? matchResponse),
+          confidence: matchResponse?.confidence,
+          eta_minutes: matchResponse?.eta_minutes,
+          explanation: matchResponse?.explanation,
+        };
 
         const distanceKm =
           typeof matched?.distance_km === 'number' ? matched.distance_km : 3.5;
