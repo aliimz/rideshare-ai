@@ -12,11 +12,11 @@ const apiClient = axios.create({
 apiClient.interceptors.response.use(
   (response) => response.data,
   (error) => {
-    const message =
-      error.response?.data?.detail ||
-      error.response?.data?.message ||
-      error.message ||
-      'An unexpected error occurred';
+    const detail = error.response?.data?.detail;
+    // FastAPI validation errors return detail as an array of objects
+    const message = Array.isArray(detail)
+      ? detail.map((e) => e.msg).join(', ')
+      : detail || error.response?.data?.message || error.message || 'An unexpected error occurred';
     return Promise.reject(new Error(message));
   }
 );
@@ -43,7 +43,7 @@ export const matchRide = (lat, lng) =>
  * @returns {Promise<Object>} Price breakdown object
  */
 export const getPrice = (distance, demand) =>
-  apiClient.post('/price', { distance_km: distance, demand_factor: demand });
+  apiClient.post('/price', { distance_km: distance, demand_level: demand });
 
 /**
  * Fetch heatmap data for demand visualization.
