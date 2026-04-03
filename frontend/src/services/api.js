@@ -43,7 +43,7 @@ export const matchRide = (lat, lng) =>
  * @returns {Promise<Object>} Price breakdown object
  */
 export const getPrice = (distance, demand) =>
-  apiClient.post('/price', { distance_km: distance, demand_level: demand });
+  apiClient.post('/price', { distance_km: distance, demand_level: Math.min(demand, 1.0) });
 
 /**
  * Fetch heatmap data for demand visualization.

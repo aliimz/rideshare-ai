@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import DriverCard from './DriverCard.jsx';
+import RideStatusTracker from './RideStatusTracker.jsx';
+import PaymentCard from './PaymentCard.jsx';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const StarRating = ({ rating }) => {
@@ -108,6 +110,7 @@ const Sidebar = ({
   priceData = null,
   loading = false,
   rideStatus = 'idle',
+  rideTimestamps = {},
   onRequestRide,
 }) => {
   const driversListRef = useRef(null);
@@ -270,6 +273,32 @@ const Sidebar = ({
                 </span>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Ride status tracker — show once a ride has been requested */}
+        {rideStatus !== 'idle' && (
+          <div className="animate-slide-up">
+            <SectionHeading>Ride Status</SectionHeading>
+            <RideStatusTracker
+              status={rideStatus}
+              timestamps={rideTimestamps}
+            />
+          </div>
+        )}
+
+        {/* Payment card — show only when the ride is completed */}
+        {rideStatus === 'completed' && priceData && (
+          <div className="animate-slide-up">
+            <SectionHeading>Payment</SectionHeading>
+            <PaymentCard
+              fare={{
+                base:         priceData.base_fare ?? priceData.base ?? 150,
+                surge_charge: priceData.surge_fee_pkr ?? priceData.surge_charge ?? 0,
+                total:        priceData.total ?? 150,
+              }}
+              surgeMultiplier={priceData.surge_multiplier ?? 1.0}
+            />
           </div>
         )}
 

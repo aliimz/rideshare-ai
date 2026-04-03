@@ -8,7 +8,10 @@ Run from the rideshare-ai/ directory:
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from backend.api.auth import router as auth_router
+from backend.api.rides import router as rides_router
 from backend.api.routes import router
+from backend.api.websocket import ws_router
 
 app = FastAPI(
     title="RideShare AI",
@@ -31,6 +34,9 @@ app.add_middleware(
 # Mount API router  (all routes are prefixed with /api inside the router)
 # ---------------------------------------------------------------------------
 app.include_router(router)
+app.include_router(ws_router)
+app.include_router(auth_router, prefix="/api")
+app.include_router(rides_router, prefix="/api")
 
 
 @app.get("/", summary="Health check")

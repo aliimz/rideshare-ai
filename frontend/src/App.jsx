@@ -1,8 +1,13 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import MapView from './components/MapView.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import StatsBar from './components/StatsBar.jsx';
 import { getDrivers, matchRide, getPrice } from './services/api.js';
+import { useWebSocket } from './hooks/useWebSocket.js';
+import { useDriverSimulation } from './hooks/useDriverSimulation.js';
+
+// Stable client ID for this browser tab (reused across re-renders)
+const WS_CLIENT_ID = `rider-${Math.random().toString(36).slice(2, 9)}`;
 
 // ── Lahore rider position ─────────────────────────────────────────────────────
 const RIDER_LAT = 31.5204;
@@ -73,7 +78,7 @@ const Toast = ({ message, type = 'info', onClose }) => {
 
 // ── App ───────────────────────────────────────────────────────────────────────
 const App = () => {
-  const [drivers,       setDrivers]       = useState([]);
+  const [restDrivers,   setRestDrivers]   = useState([]);
   const [matchedDriver, setMatchedDriver] = useState(null);
   const [priceData,     setPriceData]     = useState(null);
   const [loading,       setLoading]       = useState(false);
@@ -81,6 +86,38 @@ const App = () => {
   const [toasts,        setToasts]        = useState([]);
   const [usingMockData, setUsingMockData] = useState(false);
   const [mobileTab,     setMobileTab]     = useState('map'); // 'map' | 'panel'
+
+  // ── WebSocket — real-time driver positions ────────────────────────────
+  const { drivers: wsDrivers, connected: wsConnected } = useWebSocket(WS_CLIENT_ID);
+
+  // ── Demo simulation — only active when backend is fully offline ───────
+  // Feed MOCK_DRIVERS to the simulation; it returns an animated copy.
+  const simulatedDrivers = useDriverSimulation(usingMockData ? MOCK_DRIVERS : []);
+
+  /**
+   * Priority: WebSocket (live) > REST (static from backend) > simulated mock
+   *
+   * When the WebSocket has positions, merge them with the REST driver list so
+   * we keep rich metadata (name, rating, vehicle_type) while showing live
+   * coordinates from the WebSocket stream.
+   */
+  const drivers = useMemo(() => {
+    if (wsConnected && wsDrivers.length > 0) {
+      // Build a lookup of live positions keyed by driver_id (string)
+      const posMap = Object.fromEntries(
+        wsDrivers.map((d) => [String(d.driver_id), d])
+      );
+      // Overlay live lat/lng onto REST metadata when available
+      const merged = restDrivers.map((d) => {
+        const live = posMap[String(d.id)];
+        return live ? { ...d, lat: live.lat, lng: live.lng } : d;
+      });
+      // If REST hasn't loaded yet, fall back to raw WebSocket positions
+      return merged.length > 0 ? merged : wsDrivers;
+    }
+    if (!usingMockData && restDrivers.length > 0) return restDrivers;
+    return simulatedDrivers;
+  }, [wsConnected, wsDrivers, restDrivers, usingMockData, simulatedDrivers]);
 
   // ── Toast helpers ─────────────────────────────────────────────────────────
   const addToast = useCallback((message, type = 'info') => {
@@ -92,17 +129,17 @@ const App = () => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  // ── Load drivers on mount ─────────────────────────────────────────────────
+  // ── Load drivers on mount (REST baseline) ────────────────────────────────
   useEffect(() => {
     const loadDrivers = async () => {
       try {
         const data = await getDrivers();
         const list = Array.isArray(data) ? data : data?.drivers ?? [];
-        setDrivers(list);
+        setRestDrivers(list);
         setUsingMockData(false);
       } catch {
-        // Backend not running — use mock data for demo
-        setDrivers(MOCK_DRIVERS);
+        // Backend not running — fall back to simulation
+        setRestDrivers([]);
         setUsingMockData(true);
         addToast('Backend offline — showing demo data', 'warning');
       }
@@ -194,11 +231,20 @@ const App = () => {
 
         {/* AI status */}
         <div className="flex items-center gap-2">
-          {usingMockData && (
-            <span className="text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full font-medium">
-              Demo Mode
+          {/* Live / Demo connection badge */}
+          {wsConnected ? (
+            <span className="flex items-center gap-1.5 text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full font-medium">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
+              </span>
+              Live
             </span>
-          )}
+          ) : usingMockData ? (
+            <span className="text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full font-medium">
+              Demo
+            </span>
+          ) : null}
           <div className="flex items-center gap-2 bg-green-500/10 border border-green-500/30 rounded-full px-3 py-1.5">
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
