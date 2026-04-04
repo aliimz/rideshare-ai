@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.core.dependencies import get_current_user
 from backend.core.security import create_access_token, hash_password, verify_password
 from backend.db.database import get_db
-from backend.db.repositories import UserRepository
+from backend.db.repositories import DriverRepository, UserRepository
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -78,8 +78,16 @@ async def register(
         role=body.role,
     )
 
+    if body.role == "driver":
+        driver_repo = DriverRepository(db)
+        await driver_repo.create(
+            user_id=user.id,
+            vehicle_type="sedan",
+            rating=5.0,
+        )
+
     token = create_access_token(
-        {"sub": str(user.id), "email": user.email, "role": user.role}
+        {"sub": str(user.id), "email": user.email, "role": str(user.role.value)}
     )
     return TokenResponse(access_token=token)
 

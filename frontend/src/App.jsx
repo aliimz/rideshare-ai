@@ -2,7 +2,14 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import MapView from './components/MapView.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import StatsBar from './components/StatsBar.jsx';
-import { getDrivers, matchRide, getPrice } from './services/api.js';
+import {
+  createRide,
+  getDrivers,
+  getPrice,
+  login,
+  matchRide,
+  setAuthToken,
+} from './services/api.js';
 import { useWebSocket } from './hooks/useWebSocket.js';
 import { useDriverSimulation } from './hooks/useDriverSimulation.js';
 import { Geolocation } from '@capacitor/geolocation';
@@ -13,6 +20,8 @@ const WS_CLIENT_ID = `rider-${Math.random().toString(36).slice(2, 9)}`;
 // ── Lahore rider position ─────────────────────────────────────────────────────
 const RIDER_LAT = 31.5204;
 const RIDER_LNG = 74.3587;
+const DEMO_RIDER_EMAIL = 'demo@rider.com';
+const DEMO_RIDER_PASSWORD = 'Rider@123';
 
 // ── Mock data fallback (used when backend is offline) ─────────────────────────
 const MOCK_DRIVERS = [
@@ -198,15 +207,37 @@ const App = () => {
 
         const distanceKm =
           typeof matched?.distance_km === 'number' ? matched.distance_km : 3.5;
-        const demandFactor = 1.0;
 
-        const priceResponse = await getPrice(distanceKm, demandFactor);
+        const priceResponse = await getPrice(distanceKm, riderPosition[0], riderPosition[1]);
         price = priceResponse;
       }
 
       setMatchedDriver(matched);
       setPriceData(price);
       setRideStatus('matched');
+
+      if (!usingMockData) {
+        try {
+          const auth = await login(DEMO_RIDER_EMAIL, DEMO_RIDER_PASSWORD);
+          setAuthToken(auth.access_token);
+
+          const createdRide = await createRide({
+            pickup_lat: riderPosition[0],
+            pickup_lng: riderPosition[1],
+            dropoff_lat: riderPosition[0] - 0.018,
+            dropoff_lng: riderPosition[1] + 0.042,
+            pickup_address: 'Current Location, Lahore',
+            dropoff_address: 'Gulberg III, Lahore',
+            vehicle_type: 'economy',
+          });
+
+          addToast(`Ride request #${createdRide.id} added to live dispatch`, 'info');
+        } catch {
+          addToast('Ride matched, but live dispatch request could not be created', 'warning');
+        } finally {
+          setAuthToken(null);
+        }
+      }
       addToast(
         `${matched.name} matched — ${matched.eta_minutes ?? 4} min ETA`,
         'success'
@@ -217,7 +248,7 @@ const App = () => {
     } finally {
       setLoading(false);
     }
-  }, [usingMockData, addToast]);
+  }, [usingMockData, addToast, riderPosition]);
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (

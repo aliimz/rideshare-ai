@@ -4,6 +4,7 @@ Ride management endpoints: create, retrieve, status update, and history.
 Uses PostgreSQL via AsyncSession + RideRepository.
 """
 
+import math
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -15,19 +16,32 @@ from backend.core.dependencies import get_current_user, require_driver, require_
 from backend.db.database import get_db
 from backend.db.models import Driver, RideStatus
 from backend.db.repositories import RideRepository
+from backend.services.pricing import DynamicPricingService
 
 router = APIRouter(prefix="/rides", tags=["rides"])
 
-StatusLiteral = Literal["requested", "accepted", "in_progress", "completed", "cancelled"]
+StatusLiteral = Literal[
+    "requested",
+    "accepted",
+    "en_route",
+    "arrived",
+    "in_progress",
+    "completed",
+    "cancelled",
+]
 
 # Map incoming status strings to RideStatus enum values
 _STATUS_MAP: dict[str, RideStatus] = {
     "requested": RideStatus.requested,
     "accepted": RideStatus.matched,      # "accepted" by driver = "matched" in DB
+    "en_route": RideStatus.en_route,
+    "arrived": RideStatus.arrived,
     "in_progress": RideStatus.in_progress,
     "completed": RideStatus.completed,
     "cancelled": RideStatus.cancelled,
 }
+
+_pricing_service = DynamicPricingService()
 
 
 # ---------------------------------------------------------------------------
@@ -61,6 +75,9 @@ class RideResponse(BaseModel):
     dropoff_address: str
     vehicle_type: str
     status: str
+    fare_amount: float | None = None
+    surge_multiplier: float | None = None
+    distance_km: float | None = None
     created_at: str
     updated_at: str
 
@@ -84,6 +101,13 @@ async def create_ride(
     """Create a new ride request. Initial status is ``requested``."""
     rider_id = int(current_user["sub"])
     repo = RideRepository(db)
+    distance_km = _estimate_distance_km(
+        body.pickup_lat,
+        body.pickup_lng,
+        body.dropoff_lat,
+        body.dropoff_lng,
+    )
+    price = _pricing_service.calculate_price(distance_km, 0.15)
 
     ride = await repo.create(
         rider_id=rider_id,
@@ -93,6 +117,9 @@ async def create_ride(
         dropoff_lng=body.dropoff_lng,
         pickup_address=body.pickup_address,
         dropoff_address=body.dropoff_address,
+        fare_amount=price.total,
+        surge_multiplier=price.surge_multiplier,
+        distance_km=distance_km,
     )
 
     return _to_response(ride, body.pickup_address, body.dropoff_address, body.vehicle_type)
@@ -138,8 +165,12 @@ async def get_ride(
     role = current_user.get("role")
 
     # Riders can only see their own rides; drivers can see rides assigned to them
-    is_rider_owner = (ride.rider_id == user_id)
-    is_assigned_driver = (ride.driver_id is not None and role == "driver")
+    is_rider_owner = ride.rider_id == user_id
+    is_assigned_driver = (
+        role == "driver"
+        and ride.driver is not None
+        and ride.driver.user_id == user_id
+    )
 
     if not (is_rider_owner or is_assigned_driver):
         raise HTTPException(
@@ -231,8 +262,36 @@ def _to_response(
         dropoff_address=ride.dropoff_address or dropoff_address,
         vehicle_type=vehicle_type,
         status=ride.status.value if hasattr(ride.status, "value") else str(ride.status),
+        fare_amount=float(ride.fare_amount) if ride.fare_amount is not None else None,
+        surge_multiplier=ride.surge_multiplier,
+        distance_km=ride.distance_km,
         created_at=ride.requested_at.isoformat() if ride.requested_at else "",
         updated_at=(
             ride.completed_at or ride.matched_at or ride.requested_at
         ).isoformat() if ride.requested_at else "",
     )
+
+
+def _estimate_distance_km(
+    pickup_lat: float,
+    pickup_lng: float,
+    dropoff_lat: float,
+    dropoff_lng: float,
+) -> float:
+    """Approximate trip distance with the haversine formula."""
+    earth_radius_km = 6371.0
+
+    lat1 = math.radians(pickup_lat)
+    lng1 = math.radians(pickup_lng)
+    lat2 = math.radians(dropoff_lat)
+    lng2 = math.radians(dropoff_lng)
+
+    dlat = lat2 - lat1
+    dlng = lng2 - lng1
+
+    a = (
+        math.sin(dlat / 2) ** 2
+        + math.cos(lat1) * math.cos(lat2) * math.sin(dlng / 2) ** 2
+    )
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return round(earth_radius_km * c, 2)

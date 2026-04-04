@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 from backend.db.models import Driver, Payment, PaymentStatus, Ride, RideStatus, User
 
@@ -102,18 +103,43 @@ class DriverRepository:
 
     async def get_all(self) -> list[Driver]:
         """Return all driver records regardless of availability."""
-        result = await self._session.execute(select(Driver))
+        result = await self._session.execute(
+            select(Driver)
+            .options(joinedload(Driver.user))
+            .order_by(Driver.id.asc())
+        )
         return list(result.scalars().all())
 
     async def get_available(self) -> list[Driver]:
         """Return drivers that are active and currently marked available."""
         result = await self._session.execute(
-            select(Driver).where(
+            select(Driver)
+            .options(joinedload(Driver.user))
+            .where(
                 Driver.available.is_(True),
                 Driver.is_active.is_(True),
             )
+            .order_by(Driver.id.asc())
         )
         return list(result.scalars().all())
+
+    async def find_by_id(self, driver_id: int) -> Driver | None:
+        """Return a driver by primary key with the linked user loaded."""
+        result = await self._session.execute(
+            select(Driver)
+            .options(joinedload(Driver.user))
+            .where(Driver.id == driver_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def find_by_user_id(self, user_id: int) -> Driver | None:
+        """Return the driver profile for a given user id."""
+        result = await self._session.execute(
+            select(Driver)
+            .options(joinedload(Driver.user))
+            .where(Driver.user_id == user_id)
+        )
+        return result.scalar_one_or_none()
 
     async def update_location(
         self, driver_id: int, *, lat: float, lng: float
@@ -146,6 +172,17 @@ class DriverRepository:
         )
         await self._session.flush()
         return await self._session.get(Driver, driver_id)
+
+    async def increment_total_trips(self, driver_id: int) -> Driver | None:
+        """Increment the driver's completed trip counter by one."""
+        driver = await self._session.get(Driver, driver_id)
+        if driver is None:
+            return None
+
+        driver.total_trips += 1
+        await self._session.flush()
+        await self._session.refresh(driver)
+        return driver
 
 
 # ---------------------------------------------------------------------------
@@ -227,13 +264,92 @@ class RideRepository:
 
     async def find_by_id(self, ride_id: int) -> Ride | None:
         """Return the ride with the given primary key, or None if not found."""
-        return await self._session.get(Ride, ride_id)
+        result = await self._session.execute(
+            select(Ride)
+            .options(
+                joinedload(Ride.rider),
+                joinedload(Ride.driver).joinedload(Driver.user),
+                joinedload(Ride.payment),
+            )
+            .where(Ride.id == ride_id)
+        )
+        return result.scalar_one_or_none()
 
     async def get_rider_history(self, rider_id: int) -> list[Ride]:
         """Return all rides for a given rider, ordered most-recent first."""
         result = await self._session.execute(
             select(Ride)
+            .options(
+                joinedload(Ride.rider),
+                joinedload(Ride.driver).joinedload(Driver.user),
+                joinedload(Ride.payment),
+            )
             .where(Ride.rider_id == rider_id)
+            .order_by(Ride.requested_at.desc())
+        )
+        return list(result.scalars().all())
+
+    async def get_all(self) -> list[Ride]:
+        """Return every ride with related rider, driver, and payment data."""
+        result = await self._session.execute(
+            select(Ride)
+            .options(
+                joinedload(Ride.rider),
+                joinedload(Ride.driver).joinedload(Driver.user),
+                joinedload(Ride.payment),
+            )
+            .order_by(Ride.requested_at.desc())
+        )
+        return list(result.scalars().all())
+
+    async def get_open_requests(self) -> list[Ride]:
+        """Return unassigned ride requests for driver dispatch."""
+        result = await self._session.execute(
+            select(Ride)
+            .options(joinedload(Ride.rider), joinedload(Ride.payment))
+            .where(
+                Ride.status == RideStatus.requested,
+                Ride.driver_id.is_(None),
+            )
+            .order_by(Ride.requested_at.desc())
+        )
+        return list(result.scalars().all())
+
+    async def get_driver_active_ride(self, driver_id: int) -> Ride | None:
+        """Return the active non-terminal ride currently assigned to a driver."""
+        result = await self._session.execute(
+            select(Ride)
+            .options(
+                joinedload(Ride.rider),
+                joinedload(Ride.driver).joinedload(Driver.user),
+                joinedload(Ride.payment),
+            )
+            .where(
+                Ride.driver_id == driver_id,
+                Ride.status.in_(
+                    [
+                        RideStatus.matched,
+                        RideStatus.en_route,
+                        RideStatus.arrived,
+                        RideStatus.in_progress,
+                    ]
+                ),
+            )
+            .order_by(Ride.requested_at.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    async def get_driver_history(self, driver_id: int) -> list[Ride]:
+        """Return all rides assigned to a driver, newest first."""
+        result = await self._session.execute(
+            select(Ride)
+            .options(
+                joinedload(Ride.rider),
+                joinedload(Ride.driver).joinedload(Driver.user),
+                joinedload(Ride.payment),
+            )
+            .where(Ride.driver_id == driver_id)
             .order_by(Ride.requested_at.desc())
         )
         return list(result.scalars().all())

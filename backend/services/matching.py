@@ -1,9 +1,16 @@
-import math
-import numpy as np
-from datetime import datetime
-from typing import List, Tuple
+"""
+ML-powered driver matching with real-data retraining.
 
-from sklearn.ensemble import RandomForestClassifier
+Trains a GradientBoostingClassifier on synthetic data initially,
+then retrains on logged MatchOutcome records as real rides complete.
+"""
+
+import math
+from datetime import datetime
+from typing import List, Optional, Tuple
+
+import numpy as np
+from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.preprocessing import StandardScaler
 
 from backend.models.schemas import Driver, MatchResult
@@ -22,14 +29,15 @@ def _haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
 
 class RideMatchingService:
     """
-    ML-powered driver matching using a RandomForestClassifier trained on
-    synthetic ride data.
+    Gradient-boosted driver matching.
 
-    Features used per driver:
-        - distance_km        : haversine distance from rider
-        - driver_rating      : star rating (1–5)
-        - availability_score : 1.0 if available else 0.0
-        - time_of_day        : fractional hour (0–24) — captures demand patterns
+    Features per driver:
+        - distance_km           : haversine distance from rider
+        - driver_rating         : star rating (1–5)
+        - availability_score    : 1.0 if available else 0.0
+        - time_of_day           : fractional hour (0–24)
+        - day_of_week           : 0=Monday … 6=Sunday
+        - driver_acceptance_rate: historical acceptance (0–1)
     """
 
     N_SYNTHETIC = 2000
@@ -37,57 +45,92 @@ class RideMatchingService:
 
     def __init__(self, drivers_service: DriversService) -> None:
         self._drivers_service = drivers_service
-        self._model = RandomForestClassifier(
+        self._model = GradientBoostingClassifier(
             n_estimators=100,
-            max_depth=6,
+            max_depth=4,
+            learning_rate=0.1,
             random_state=self.RANDOM_STATE,
         )
         self._scaler = StandardScaler()
         self._trained = False
-        self._train()
+        self._train_synthetic()
 
     # ------------------------------------------------------------------
     # Training
     # ------------------------------------------------------------------
 
-    def _train(self) -> None:
-        """Build and fit the model on synthetic ride data."""
+    def _train_synthetic(self) -> None:
+        """Initial training on synthetic data so the app works immediately."""
+        X, y = self._build_synthetic_dataset(self.N_SYNTHETIC)
+        X_scaled = self._scaler.fit_transform(X)
+        self._model.fit(X_scaled, y)
+        self._trained = True
+
+    def _build_synthetic_dataset(self, n: int) -> Tuple[np.ndarray, np.ndarray]:
         rng = np.random.default_rng(self.RANDOM_STATE)
 
-        distance_km = rng.uniform(0.1, 10.0, self.N_SYNTHETIC)
-        driver_rating = rng.uniform(3.5, 5.0, self.N_SYNTHETIC)
-        availability_score = rng.choice([0.0, 1.0], self.N_SYNTHETIC, p=[0.3, 0.7])
-        time_of_day = rng.uniform(0.0, 24.0, self.N_SYNTHETIC)
+        distance_km = rng.uniform(0.1, 10.0, n)
+        driver_rating = rng.uniform(3.5, 5.0, n)
+        availability_score = rng.choice([0.0, 1.0], n, p=[0.3, 0.7])
+        time_of_day = rng.uniform(0.0, 24.0, n)
+        day_of_week = rng.integers(0, 7, n)
+        driver_acceptance_rate = rng.beta(7, 2, n)  # skewed high
 
-        # Label: a driver is "good match" when close, highly rated, and available
         score = (
             (1.0 / (distance_km + 0.5)) * 3.0
             + (driver_rating - 3.5) * 2.0
             + availability_score * 2.5
-            + np.sin(time_of_day / 24.0 * 2 * math.pi) * 0.5   # mild time-of-day effect
+            + np.sin(time_of_day / 24.0 * 2 * math.pi) * 0.5
+            + driver_acceptance_rate * 1.0
         )
-        noise = rng.normal(0, 0.5, self.N_SYNTHETIC)
+        noise = rng.normal(0, 0.5, n)
         labels = (score + noise > score.mean()).astype(int)
 
-        X = np.column_stack([distance_km, driver_rating, availability_score, time_of_day])
+        X = np.column_stack(
+            [distance_km, driver_rating, availability_score, time_of_day, day_of_week, driver_acceptance_rate]
+        )
+        return X, labels
+
+    def retrain_with_outcomes(self, outcomes: List[dict]) -> bool:
+        """
+        Retrain the model mixing synthetic data with real MatchOutcome records.
+
+        outcomes: list of dicts with keys:
+            distance_km, driver_rating, availability_score, time_of_day,
+            day_of_week, driver_acceptance_rate, outcome_label (0 or 1)
+        """
+        if len(outcomes) < 10:
+            return False
+
+        X_syn, y_syn = self._build_synthetic_dataset(self.N_SYNTHETIC)
+
+        real_X = []
+        real_y = []
+        for o in outcomes:
+            real_X.append(
+                [
+                    o["distance_km"],
+                    o["driver_rating"],
+                    o["availability_score"],
+                    o["time_of_day"],
+                    o["day_of_week"],
+                    o.get("driver_acceptance_rate", 0.8),
+                ]
+            )
+            real_y.append(int(o["outcome_label"]))
+
+        X = np.vstack([X_syn, np.array(real_X)])
+        y = np.concatenate([y_syn, np.array(real_y)])
+
         X_scaled = self._scaler.fit_transform(X)
-        self._model.fit(X_scaled, labels)
+        self._model.fit(X_scaled, y)
         self._trained = True
+        self._trained_on_real = True
+        return True
 
     # ------------------------------------------------------------------
     # Scoring
     # ------------------------------------------------------------------
-
-    def _build_feature_row(
-        self,
-        driver: Driver,
-        rider_lat: float,
-        rider_lng: float,
-        time_of_day: float,
-    ) -> np.ndarray:
-        distance_km = _haversine_km(rider_lat, rider_lng, driver.lat, driver.lng)
-        availability_score = 1.0 if driver.available else 0.0
-        return np.array([[distance_km, driver.rating, availability_score, time_of_day]])
 
     def score_drivers(
         self,
@@ -102,18 +145,29 @@ class RideMatchingService:
         if not drivers:
             return []
 
-        time_of_day = datetime.now().hour + datetime.now().minute / 60.0
+        now = datetime.now()
+        time_of_day = now.hour + now.minute / 60.0
+        day_of_week = now.weekday()
 
         rows = []
         distances = []
         for driver in drivers:
             dist = _haversine_km(rider_lat, rider_lng, driver.lat, driver.lng)
             distances.append(dist)
-            rows.append([dist, driver.rating, 1.0 if driver.available else 0.0, time_of_day])
+            rows.append(
+                [
+                    dist,
+                    driver.rating,
+                    1.0 if driver.available else 0.0,
+                    time_of_day,
+                    day_of_week,
+                    0.85,  # default acceptance rate until we have history
+                ]
+            )
 
         X = np.array(rows)
         X_scaled = self._scaler.transform(X)
-        proba = self._model.predict_proba(X_scaled)[:, 1]  # probability of class 1 (good match)
+        proba = self._model.predict_proba(X_scaled)[:, 1]
 
         results = [
             (driver, float(conf), float(dist))
@@ -127,12 +181,7 @@ class RideMatchingService:
     # ------------------------------------------------------------------
 
     def get_best_match(self, rider_lat: float, rider_lng: float) -> MatchResult:
-        """
-        Return the best available driver for the given rider location.
-
-        Raises:
-            ValueError: if no available drivers exist.
-        """
+        """Return the best available driver for the given rider location."""
         available = self._drivers_service.get_available_drivers()
         if not available:
             raise ValueError("No available drivers at this time.")
@@ -144,8 +193,8 @@ class RideMatchingService:
         eta_minutes = max(1, round((distance_km / 20.0) * 60))
 
         explanation = (
-            f"Driver selected: {distance_km:.1f} km away, "
-            f"{best_driver.rating:.1f}\u2605 rating, "
+            f"AI selected {best_driver.name}: {distance_km:.1f} km away, "
+            f"{best_driver.rating:.1f}★ rating, "
             f"{confidence * 100:.0f}% match confidence. "
             f"Vehicle: {best_driver.vehicle_type.capitalize()}. "
             f"ETA: ~{eta_minutes} min."
@@ -157,3 +206,8 @@ class RideMatchingService:
             eta_minutes=eta_minutes,
             explanation=explanation,
         )
+
+    @property
+    def is_trained_on_real_data(self) -> bool:
+        """True if the model has been retrained on real outcomes."""
+        return getattr(self, "_trained_on_real", False)

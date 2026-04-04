@@ -16,11 +16,12 @@ import asyncio
 import random
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.core.security import hash_password
 from backend.db.database import AsyncSessionLocal
-from backend.db.models import Driver, Payment, PaymentStatus, Ride, RideStatus, User, UserRole
+from backend.db.models import Driver, MatchOutcome, Payment, PaymentStatus, Ride, RideStatus, User, UserRole
 
 # ---------------------------------------------------------------------------
 # Demo driver data (matches the existing DriversService hardcoded list)
@@ -67,6 +68,13 @@ _LAHORE_ZONES = [
     (31.5430, 74.3290, "Cantt, Lahore"),
     (31.5060, 74.3220, "Garden Town, Lahore"),
     (31.4930, 74.2980, "Iqbal Town, Lahore"),
+]
+
+_LIVE_RIDE_TEMPLATES = [
+    (_LAHORE_ZONES[0], _LAHORE_ZONES[2], 1.2),
+    (_LAHORE_ZONES[6], _LAHORE_ZONES[4], 1.0),
+    (_LAHORE_ZONES[3], _LAHORE_ZONES[1], 1.1),
+    (_LAHORE_ZONES[8], _LAHORE_ZONES[5], 1.3),
 ]
 
 
@@ -164,11 +172,228 @@ async def seed(session: AsyncSession) -> None:
         )
         session.add(payment)
 
+    # ── Seed match outcomes for ML retraining ───────────────────────────────
+    await _seed_match_outcomes(session, driver_records)
+
     await session.commit()
     print(
         f"[seed] Seeded {len(_DEMO_DRIVERS)} drivers, "
-        f"{len(_DEMO_RIDERS)} riders, 50 historical rides."
+        f"{len(_DEMO_RIDERS)} riders, 50 historical rides, match outcomes."
     )
+
+
+async def ensure_demo_runtime_data(session: AsyncSession) -> None:
+    """
+    Ensure the database has a few live rides and some revenue today.
+
+    This runs on every startup but only inserts data when the live/demo
+    records are missing, so the admin and driver dashboards stay useful.
+    """
+    rides_result = await session.execute(select(Ride))
+    all_rides = list(rides_result.scalars().all())
+
+    users_result = await session.execute(
+        select(User).where(User.role == UserRole.rider).order_by(User.id.asc())
+    )
+    riders = list(users_result.scalars().all())
+
+    drivers_result = await session.execute(select(Driver).order_by(Driver.id.asc()))
+    drivers = list(drivers_result.scalars().all())
+
+    if not riders or not drivers:
+        return
+
+    active_statuses = {
+        RideStatus.requested,
+        RideStatus.matched,
+        RideStatus.en_route,
+        RideStatus.arrived,
+        RideStatus.in_progress,
+    }
+    has_live_rides = any(ride.status in active_statuses for ride in all_rides)
+
+    now = datetime.now(timezone.utc)
+    completed_today = [
+        ride
+        for ride in all_rides
+        if ride.status == RideStatus.completed
+        and ride.completed_at is not None
+        and ride.completed_at.date() == now.date()
+    ]
+
+    if not has_live_rides:
+        for index, (pickup, dropoff, surge) in enumerate(_LIVE_RIDE_TEMPLATES):
+            rider = riders[index % len(riders)]
+            distance_km = _estimate_distance_km(pickup[0], pickup[1], dropoff[0], dropoff[1])
+            fare = _estimate_fare(distance_km, surge)
+            requested_at = now - timedelta(minutes=10 + index * 6)
+
+            session.add(
+                Ride(
+                    rider_id=rider.id,
+                    status=RideStatus.requested,
+                    pickup_lat=pickup[0],
+                    pickup_lng=pickup[1],
+                    dropoff_lat=dropoff[0],
+                    dropoff_lng=dropoff[1],
+                    pickup_address=pickup[2],
+                    dropoff_address=dropoff[2],
+                    fare_amount=fare,
+                    surge_multiplier=surge,
+                    distance_km=distance_km,
+                    requested_at=requested_at,
+                )
+            )
+
+        live_driver = next((driver for driver in drivers if driver.available), drivers[0])
+        live_driver.available = False
+        matched_pickup = _LAHORE_ZONES[7]
+        matched_dropoff = _LAHORE_ZONES[4]
+        matched_distance = _estimate_distance_km(
+            matched_pickup[0],
+            matched_pickup[1],
+            matched_dropoff[0],
+            matched_dropoff[1],
+        )
+        session.add(
+            Ride(
+                rider_id=riders[0].id,
+                driver_id=live_driver.id,
+                status=RideStatus.en_route,
+                pickup_lat=matched_pickup[0],
+                pickup_lng=matched_pickup[1],
+                dropoff_lat=matched_dropoff[0],
+                dropoff_lng=matched_dropoff[1],
+                pickup_address=matched_pickup[2],
+                dropoff_address=matched_dropoff[2],
+                fare_amount=_estimate_fare(matched_distance, 1.15),
+                surge_multiplier=1.15,
+                distance_km=matched_distance,
+                requested_at=now - timedelta(minutes=18),
+                matched_at=now - timedelta(minutes=12),
+            )
+        )
+
+        in_progress_driver = next(
+            (driver for driver in drivers if driver.available and driver.id != live_driver.id),
+            drivers[min(1, len(drivers) - 1)],
+        )
+        in_progress_driver.available = False
+        in_progress_pickup = _LAHORE_ZONES[1]
+        in_progress_dropoff = _LAHORE_ZONES[9]
+        in_progress_distance = _estimate_distance_km(
+            in_progress_pickup[0],
+            in_progress_pickup[1],
+            in_progress_dropoff[0],
+            in_progress_dropoff[1],
+        )
+        session.add(
+            Ride(
+                rider_id=riders[1 % len(riders)].id,
+                driver_id=in_progress_driver.id,
+                status=RideStatus.in_progress,
+                pickup_lat=in_progress_pickup[0],
+                pickup_lng=in_progress_pickup[1],
+                dropoff_lat=in_progress_dropoff[0],
+                dropoff_lng=in_progress_dropoff[1],
+                pickup_address=in_progress_pickup[2],
+                dropoff_address=in_progress_dropoff[2],
+                fare_amount=_estimate_fare(in_progress_distance, 1.0),
+                surge_multiplier=1.0,
+                distance_km=in_progress_distance,
+                requested_at=now - timedelta(minutes=35),
+                matched_at=now - timedelta(minutes=28),
+            )
+        )
+
+    if len(completed_today) < 3:
+        needed = 3 - len(completed_today)
+        for index in range(needed):
+            rider = riders[index % len(riders)]
+            driver = drivers[(index + 2) % len(drivers)]
+            pickup = _LAHORE_ZONES[(index + 2) % len(_LAHORE_ZONES)]
+            dropoff = _LAHORE_ZONES[(index + 5) % len(_LAHORE_ZONES)]
+            surge = [1.0, 1.1, 1.3][index % 3]
+            distance_km = _estimate_distance_km(pickup[0], pickup[1], dropoff[0], dropoff[1])
+            fare = _estimate_fare(distance_km, surge)
+
+            requested_at = now - timedelta(hours=5 - index, minutes=15)
+            matched_at = requested_at + timedelta(minutes=3)
+            completed_at = matched_at + timedelta(minutes=18 + index * 4)
+
+            ride = Ride(
+                rider_id=rider.id,
+                driver_id=driver.id,
+                status=RideStatus.completed,
+                pickup_lat=pickup[0],
+                pickup_lng=pickup[1],
+                dropoff_lat=dropoff[0],
+                dropoff_lng=dropoff[1],
+                pickup_address=pickup[2],
+                dropoff_address=dropoff[2],
+                fare_amount=fare,
+                surge_multiplier=surge,
+                distance_km=distance_km,
+                requested_at=requested_at,
+                matched_at=matched_at,
+                completed_at=completed_at,
+            )
+            session.add(ride)
+            await session.flush()
+
+            session.add(
+                Payment(
+                    ride_id=ride.id,
+                    amount=fare,
+                    status=PaymentStatus.paid,
+                    created_at=completed_at,
+                )
+            )
+
+    await session.commit()
+
+
+async def _seed_match_outcomes(session: AsyncSession, drivers: list[Driver]) -> None:
+    """Generate synthetic match outcomes so the ML model has data to retrain on."""
+    import random
+    rng = random.Random(42)
+    now = datetime.now(timezone.utc)
+
+    for i in range(120):
+        driver = rng.choice(drivers)
+        distance_km = round(rng.uniform(0.5, 8.0), 2)
+        rating = driver.rating
+        available = 1.0 if driver.available else 0.0
+        time_of_day = rng.uniform(0.0, 24.0)
+        day_of_week = rng.randint(0, 6)
+        acceptance = rng.uniform(0.6, 0.95)
+
+        # Simulate outcome: closer + higher rating = more likely good
+        score = (1.0 / (distance_km + 0.5)) * 2 + (rating - 3.5) * 1.5 + acceptance
+        outcome_label = 1 if score > 2.5 else 0
+        actual_rating = round(rng.uniform(4.0, 5.0), 1) if outcome_label else round(rng.uniform(2.5, 4.2), 1)
+        wait_min = rng.uniform(3.0, 8.0) if outcome_label else rng.uniform(12.0, 25.0)
+        cancelled = outcome_label == 0 and rng.random() < 0.3
+
+        session.add(
+            MatchOutcome(
+                ride_id=None,
+                driver_id=driver.id,
+                rider_lat=round(rng.uniform(31.45, 31.55), 4),
+                rider_lng=round(rng.uniform(74.25, 74.42), 4),
+                distance_km=distance_km,
+                driver_rating=rating,
+                availability_score=available,
+                time_of_day=time_of_day,
+                day_of_week=day_of_week,
+                driver_acceptance_rate=acceptance,
+                matched_at=now - timedelta(days=rng.randint(1, 30), hours=rng.randint(0, 23)),
+                outcome_label=0 if cancelled else outcome_label,
+                actual_rating=actual_rating,
+                cancelled=cancelled,
+                actual_wait_minutes=round(wait_min, 1),
+            )
+        )
 
 
 async def run() -> None:
@@ -178,3 +403,22 @@ async def run() -> None:
 
 if __name__ == "__main__":
     asyncio.run(run())
+
+
+def _estimate_distance_km(
+    pickup_lat: float,
+    pickup_lng: float,
+    dropoff_lat: float,
+    dropoff_lng: float,
+) -> float:
+    """
+    Approximate ride distance using a lightweight local formula.
+    """
+    lat_delta = (pickup_lat - dropoff_lat) * 111.0
+    lng_delta = (pickup_lng - dropoff_lng) * 96.0
+    return round((lat_delta ** 2 + lng_delta ** 2) ** 0.5, 2)
+
+
+def _estimate_fare(distance_km: float, surge_multiplier: float) -> float:
+    base_fare = 50 + (distance_km * 25)
+    return round(base_fare * surge_multiplier, 2)

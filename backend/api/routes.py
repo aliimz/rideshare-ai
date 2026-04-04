@@ -1,3 +1,4 @@
+import asyncio
 from typing import List
 
 from fastapi import APIRouter, HTTPException
@@ -9,19 +10,26 @@ from backend.models.schemas import (
     PriceResult,
     RideRequest,
 )
+from backend.services.demand_forecast import DemandForecastService
 from backend.services.drivers import DriversService
 from backend.services.matching import RideMatchingService
+from backend.services.ml_logging import log_match_decision
 from backend.services.pricing import DynamicPricingService
 
 router = APIRouter(prefix="/api")
 
 # ---------------------------------------------------------------------------
-# Service singletons — initialised once at import time so the RF model is
-# trained only once when the server starts.
+# Service singletons — initialised once at import time.
 # ---------------------------------------------------------------------------
 _drivers_service = DriversService()
 _matching_service = RideMatchingService(drivers_service=_drivers_service)
 _pricing_service = DynamicPricingService()
+_demand_service = DemandForecastService()
+
+# Exported for admin retraining endpoints
+public_drivers_service = _drivers_service
+public_matching_service = _matching_service
+public_demand_service = _demand_service
 
 
 # ---------------------------------------------------------------------------
@@ -30,7 +38,7 @@ _pricing_service = DynamicPricingService()
 
 
 @router.post("/match", response_model=MatchResult, summary="Match rider to best driver")
-def match_driver(request: RideRequest) -> MatchResult:
+async def match_driver(request: RideRequest) -> MatchResult:
     """
     Accept a rider's GPS coordinates and return the best matched driver
     with an AI confidence score and human-readable explanation.
@@ -45,6 +53,16 @@ def match_driver(request: RideRequest) -> MatchResult:
     except ValueError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
+    # Fire-and-forget logging so matching stays fast
+    asyncio.create_task(
+        log_match_decision(
+            ride_id=None,
+            driver=result.driver,
+            rider_lat=request.rider_lat,
+            rider_lng=request.rider_lng,
+        )
+    )
+
     return result
 
 
@@ -57,10 +75,29 @@ def list_drivers() -> List[Driver]:
 @router.post("/price", response_model=PriceResult, summary="Calculate dynamic price")
 def calculate_price(request: PriceRequest) -> PriceResult:
     """
-    Accept distance and demand level, return base fare, surge multiplier,
-    total fare, and a full PKR breakdown.
+    Accept distance and optional demand level / pickup coordinates.
+    If demand_level is omitted, the XGBoost demand forecast model predicts it
+    from location and current supply conditions.
     """
-    return _pricing_service.calculate_price(request.distance_km, request.demand_level)
+    demand_level = request.demand_level
+
+    if demand_level is None:
+        if request.pickup_lat is not None and request.pickup_lng is not None:
+            available = len(_drivers_service.get_available_drivers())
+            # Approximate active rides as a simple proxy
+            active_rides = max(0, 20 - available)
+            from datetime import datetime
+            demand_level = _demand_service.predict(
+                request.pickup_lat,
+                request.pickup_lng,
+                datetime.now(),
+                available_drivers=available,
+                active_rides=active_rides,
+            )
+        else:
+            demand_level = 0.5
+
+    return _pricing_service.calculate_price(request.distance_km, demand_level)
 
 
 @router.get("/heatmap", summary="Get demand heatmap points for Lahore")

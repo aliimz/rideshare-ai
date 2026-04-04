@@ -26,7 +26,11 @@ class MatchResult(BaseModel):
 
 class PriceRequest(BaseModel):
     distance_km: float = Field(..., gt=0, description="Distance in kilometers")
-    demand_level: float = Field(..., ge=0.0, le=1.0, description="Demand level between 0 and 1")
+    demand_level: float | None = Field(
+        None, ge=0.0, le=1.0, description="Optional demand level; predicted via ML if omitted"
+    )
+    pickup_lat: float | None = Field(None, ge=-90, le=90, description="Pickup latitude for demand prediction")
+    pickup_lng: float | None = Field(None, ge=-180, le=180, description="Pickup longitude for demand prediction")
 
 
 class PriceResult(BaseModel):

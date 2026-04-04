@@ -13,6 +13,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select, text
 
 from backend.api.auth import router as auth_router
+from backend.api.admin import router as admin_router
+from backend.api.driver import router as driver_router
 from backend.api.rides import router as rides_router
 from backend.api.routes import router
 from backend.api.websocket import ws_router
@@ -39,10 +41,37 @@ async def _init_db() -> None:
         async with AsyncSessionLocal() as session:
             await seed(session)
 
+    from scripts.seed import ensure_demo_runtime_data
+    async with AsyncSessionLocal() as session:
+        await ensure_demo_runtime_data(session)
+
+
+async def _train_ai_models() -> None:
+    """Train demand forecast and matching models on startup."""
+    import asyncio
+    from backend.api.routes import (
+        public_demand_service as demand_svc,
+        public_matching_service as match_svc,
+    )
+    from backend.services.ml_logging import load_match_outcomes_for_training
+
+    X, y = await demand_svc.generate_training_data()
+    if X is not None and y is not None:
+        trained = await asyncio.to_thread(demand_svc.train, X, y)
+        if trained:
+            print(f"[AI] Demand forecast model trained on {len(y)} samples")
+
+    outcomes = await load_match_outcomes_for_training(min_records=10)
+    if outcomes:
+        trained = await asyncio.to_thread(match_svc.retrain_with_outcomes, outcomes)
+        if trained:
+            print(f"[AI] Matching model retrained on {len(outcomes)} real outcomes")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await _init_db()
+    await _train_ai_models()
     yield
 
 
@@ -75,6 +104,8 @@ app.include_router(router)
 app.include_router(ws_router)
 app.include_router(auth_router, prefix="/api")
 app.include_router(rides_router, prefix="/api")
+app.include_router(admin_router, prefix="/api")
+app.include_router(driver_router, prefix="/api")
 
 
 @app.get("/", summary="Health check")

@@ -204,3 +204,35 @@ class Payment(Base):
 
     def __repr__(self) -> str:
         return f"<Payment id={self.id} ride_id={self.ride_id} status={self.status}>"
+
+
+class MatchOutcome(Base):
+    """Log of AI matching decisions and their real-world outcomes for model retraining."""
+
+    __tablename__ = "match_outcomes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ride_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("rides.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    driver_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("drivers.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    rider_lat: Mapped[float] = mapped_column(Float, nullable=False)
+    rider_lng: Mapped[float] = mapped_column(Float, nullable=False)
+    distance_km: Mapped[float] = mapped_column(Float, nullable=False)
+    driver_rating: Mapped[float] = mapped_column(Float, nullable=False)
+    availability_score: Mapped[float] = mapped_column(Float, nullable=False)
+    time_of_day: Mapped[float] = mapped_column(Float, nullable=False)
+    day_of_week: Mapped[int] = mapped_column(Integer, nullable=False)
+    driver_acceptance_rate: Mapped[float] = mapped_column(Float, nullable=False, default=0.8)
+    matched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    outcome_label: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    actual_rating: Mapped[float | None] = mapped_column(Float, nullable=True)
+    cancelled: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    actual_wait_minutes: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    def __repr__(self) -> str:
+        return f"<MatchOutcome id={self.id} driver_id={self.driver_id} label={self.outcome_label}>"
