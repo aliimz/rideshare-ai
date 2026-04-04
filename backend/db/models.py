@@ -64,7 +64,7 @@ class User(Base):
 
     __tablename__ = "users"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -97,9 +97,9 @@ class Driver(Base):
 
     __tablename__ = "drivers"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False
     )
     lat: Mapped[float | None] = mapped_column(Float, nullable=True)
     lng: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -124,12 +124,12 @@ class Ride(Base):
 
     __tablename__ = "rides"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     rider_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True
+        Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True
     )
     driver_id: Mapped[int | None] = mapped_column(
-        BigInteger,
+        Integer,
         ForeignKey("drivers.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
@@ -181,9 +181,9 @@ class Payment(Base):
 
     __tablename__ = "payments"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     ride_id: Mapped[int] = mapped_column(
-        BigInteger,
+        Integer,
         ForeignKey("rides.id", ondelete="CASCADE"),
         unique=True,
         nullable=False,

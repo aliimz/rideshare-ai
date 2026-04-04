@@ -36,13 +36,15 @@ DATABASE_URL: str = (
 # Async engine
 # ---------------------------------------------------------------------------
 
-engine = create_async_engine(
-    DATABASE_URL,
-    echo=False,           # Set True to log all SQL statements for debugging
-    pool_pre_ping=True,   # Verify connections before reuse
-    pool_size=10,
-    max_overflow=20,
-)
+_engine_kwargs = {
+    "echo": False,        # Set True to log all SQL statements for debugging
+    "pool_pre_ping": True,  # Verify connections before reuse
+}
+if DATABASE_URL.startswith("postgresql"):
+    _engine_kwargs["pool_size"] = 10
+    _engine_kwargs["max_overflow"] = 20
+
+engine = create_async_engine(DATABASE_URL, **_engine_kwargs)
 
 # ---------------------------------------------------------------------------
 # Session factory
