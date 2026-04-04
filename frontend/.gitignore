@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Capacitor native platforms build artifacts
+android/app/build/
+android/.gradle/
+android/.idea/
+android/local.properties
+android/captures/
+android/gradle/
+android/gradlew
+android/gradlew.bat
+
+ios/App/build/
+ios/App/Pods/
+ios/App/Podfile.lock
+ios/App/App.xcworkspace/
+ios/App/App.xcodeproj/xcuserdata/
+ios/App/App.xcodeproj/project.xcworkspace/
+ios/DerivedData/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp

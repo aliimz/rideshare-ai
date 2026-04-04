@@ -18,80 +18,84 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
 });
 
-// ── Lahore centre ─────────────────────────────────────────────────────────────
-const KARACHI_CENTER = [31.5204, 74.3587];
+// ── Default centre ────────────────────────────────────────────────────────────
+const DEFAULT_CENTER = [31.5204, 74.3587];
 
 // ── Icon factories ────────────────────────────────────────────────────────────
-const createDriverIcon = (available, isMatched) => {
-  const bg = isMatched
-    ? '#22c55e'
-    : available
-    ? '#3b82f6'
-    : '#475569';
-  const border = isMatched ? '#86efac' : available ? '#93c5fd' : '#64748b';
-  const glow = isMatched
-    ? '0 0 0 4px rgba(34,197,94,0.3), 0 2px 10px rgba(0,0,0,0.6)'
-    : '0 2px 8px rgba(0,0,0,0.5)';
-  const emoji = isMatched ? '🚗' : available ? '🚕' : '🚫';
+const createDriverIcon = (available, isMatched, vehicleType = 'sedan') => {
+  const size = isMatched ? 44 : 40;
+  const height = Math.round(size * 1.2); // 53 or 48
+  const iconTop = Math.round(size * 0.25); // ~11 or 10
+
+  let light, dark;
+  if (isMatched) {
+    light = '#4ade80'; // green-400
+    dark = '#16a34a';  // green-600
+  } else if (available) {
+    light = '#60a5fa'; // blue-400
+    dark = '#2563eb';  // blue-600
+  } else {
+    light = '#94a3b8'; // slate-400
+    dark = '#475569';  // slate-600
+  }
+
+  const opacity = available ? 1 : 0.65;
+
+  const vehicleIcons = {
+    bike: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><circle cx="15" cy="5" r="1"/><path d="M12 17.5V14l-3-3 4-3 2 3h2"/></svg>`,
+    suv: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 17h4V5H2v12h3m15 0h2a1 1 0 0 0 1-1v-4a1 1 0 0 0-1-1h-3V5h-6v12h2"/><circle cx="7.5" cy="17.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>`,
+    van: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="13" height="11" rx="1"/><path d="M16 10h3a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-2"/><circle cx="7.5" cy="17.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>`,
+    luxury: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 7.2h7.6l-6 4.8 2.4 7.2-6-4.8-6 4.8 2.4-7.2-6-4.8h7.6z" fill="white" stroke="none"/></svg>`,
+    sedan: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/></svg>`,
+  };
+
+  const vehicleSvg = vehicleIcons[vehicleType] || vehicleIcons.sedan;
+
+  const pulse = isMatched
+    ? `<div style="position:absolute;left:50%;top:${height - 4}px;transform:translate(-50%,-50%);width:${size}px;height:${size}px;border-radius:50%;background:${dark};opacity:0.5;animation:pinPulse 2s ease-out infinite;z-index:-1;"></div>
+       <style>@keyframes pinPulse{0%{transform:translate(-50%,-50%) scale(1);opacity:0.5}70%{transform:translate(-50%,-50%) scale(2.2);opacity:0}100%{transform:translate(-50%,-50%) scale(1);opacity:0}}</style>`
+    : '';
+
+  const html = `
+    <div style="position:relative;width:${size}px;height:${height}px;opacity:${opacity};">
+      ${pulse}
+      <svg width="${size}" height="${height}" viewBox="0 0 40 48" style="display:block;filter:drop-shadow(0 3px 5px rgba(0,0,0,0.4));">
+        <defs>
+          <linearGradient id="pinGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" style="stop-color:${light};stop-opacity:1" />
+            <stop offset="100%" style="stop-color:${dark};stop-opacity:1" />
+          </linearGradient>
+        </defs>
+        <path d="M20 0C9 0 0 9 0 20c0 11 20 28 20 28s20-17 20-28C40 9 31 0 20 0z" fill="url(#pinGrad)"/>
+      </svg>
+      <div style="position:absolute;top:${iconTop}px;left:50%;transform:translateX(-50%);width:20px;height:20px;">
+        ${vehicleSvg}
+      </div>
+    </div>
+  `;
 
   return L.divIcon({
     className: '',
-    iconSize: [34, 34],
-    iconAnchor: [17, 17],
-    popupAnchor: [0, -18],
-    html: `
-      <div style="
-        width:34px; height:34px;
-        border-radius:50%;
-        background:${bg};
-        border:2.5px solid ${border};
-        box-shadow:${glow};
-        display:flex; align-items:center; justify-content:center;
-        font-size:15px;
-        position:relative;
-        ${isMatched ? 'animation: matchedRing 1.8s ease-in-out infinite;' : ''}
-      ">${emoji}</div>
-      ${
-        isMatched
-          ? `<style>
-              @keyframes matchedRing {
-                0%,100%{box-shadow:0 0 0 0 rgba(34,197,94,0.6),0 2px 10px rgba(0,0,0,0.6)}
-                50%{box-shadow:0 0 0 10px rgba(34,197,94,0),0 2px 10px rgba(0,0,0,0.6)}
-              }
-            </style>`
-          : ''
-      }
-    `,
+    iconSize: [size, height],
+    iconAnchor: [size / 2, height],
+    popupAnchor: [0, -height + 6],
+    html,
   });
 };
 
 const riderIcon = L.divIcon({
   className: '',
-  iconSize: [20, 20],
-  iconAnchor: [10, 10],
+  iconSize: [32, 40],
+  iconAnchor: [16, 40],
+  popupAnchor: [0, -34],
   html: `
-    <div style="position:relative;width:20px;height:20px;">
-      <div style="
-        position:absolute; inset:0;
-        border-radius:50%;
-        background:rgba(59,130,246,0.25);
-        animation:riderPulse 2s ease-in-out infinite;
-      "></div>
-      <div style="
-        position:absolute; top:4px; left:4px;
-        width:12px; height:12px;
-        border-radius:50%;
-        background:#3b82f6;
-        border:2.5px solid #93c5fd;
-        box-shadow:0 0 10px rgba(59,130,246,0.7);
-      "></div>
+    <div style="position:relative;width:32px;height:40px;">
+      <svg width="32" height="40" viewBox="0 0 32 40" style="display:block;filter:drop-shadow(0 3px 6px rgba(59,130,246,0.5));">
+        <path d="M16 0C7.2 0 0 7.2 0 16c0 8.8 16 24 16 24s16-15.2 16-24C32 7.2 24.8 0 16 0z" fill="#3b82f6"/>
+        <circle cx="16" cy="11" r="3.5" fill="white"/>
+        <path d="M11 21c0-2.8 2.2-5 5-5s5 2.2 5 5v1H11v-1z" fill="white"/>
+      </svg>
     </div>
-    <style>
-      @keyframes riderPulse {
-        0%,100%{transform:scale(1);opacity:0.8}
-        50%{transform:scale(2.4);opacity:0}
-      }
-    </style>
   `,
 });
 
@@ -124,10 +128,10 @@ const stars = (rating) => {
 };
 
 // ── Main component ────────────────────────────────────────────────────────────
-const MapView = ({ drivers = [], matchedDriver = null }) => {
+const MapView = ({ drivers = [], matchedDriver = null, riderPosition = DEFAULT_CENTER }) => {
   return (
     <MapContainer
-      center={KARACHI_CENTER}
+      center={riderPosition}
       zoom={13}
       style={{ height: '100%', width: '100%' }}
       zoomControl={true}
@@ -143,7 +147,7 @@ const MapView = ({ drivers = [], matchedDriver = null }) => {
 
       {/* Soft demand halo around city centre */}
       <Circle
-        center={KARACHI_CENTER}
+        center={riderPosition}
         radius={3200}
         pathOptions={{
           color: '#22c55e',
@@ -156,7 +160,7 @@ const MapView = ({ drivers = [], matchedDriver = null }) => {
       />
 
       {/* Rider position marker */}
-      <Marker position={KARACHI_CENTER} icon={riderIcon}>
+      <Marker position={riderPosition} icon={riderIcon}>
         <Popup>
           <div className="text-center py-1">
             <p className="font-semibold text-blue-400 text-sm">📍 Your Location</p>
@@ -172,7 +176,7 @@ const MapView = ({ drivers = [], matchedDriver = null }) => {
           <Marker
             key={driver.id}
             position={[driver.lat, driver.lng]}
-            icon={createDriverIcon(driver.available, isMatched)}
+            icon={createDriverIcon(driver.available, isMatched, driver.vehicle_type)}
           >
             <Popup>
               <div style={{ minWidth: '170px' }}>

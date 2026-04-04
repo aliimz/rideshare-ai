@@ -12,7 +12,7 @@
 ## Tech Stack
 | Layer | Technology |
 |-------|-----------|
-| Frontend | React 18, Leaflet.js, Tailwind CSS |
+| Frontend | React 18, Leaflet.js, Tailwind CSS, Capacitor |
 | Backend | FastAPI, Python 3.11 |
 | AI/ML | Scikit-learn, Random Forest |
 | Infrastructure | Docker, Docker Compose |
@@ -31,6 +31,34 @@ cd backend && pip install -r requirements.txt && uvicorn main:app --reload
 cd frontend && npm install && npm run dev
 ```
 
+## Mobile Build (Android & iOS)
+The frontend is wrapped with [Capacitor](https://capacitorjs.com/) so the same React code runs as a native Android/iOS app.
+
+```bash
+cd frontend
+
+# 1. Build the web assets
+npm run build
+
+# 2. Sync to native platforms
+npx cap sync
+
+# 3. Open Android Studio / Xcode
+npx cap open android
+npx cap open ios
+
+# Or run directly on a connected device / emulator
+npx cap run android
+npx cap run ios
+```
+
+### Added scripts
+- `npm run sync` — sync web assets to Android & iOS
+- `npm run open:android` — open Android Studio
+- `npm run open:ios` — open Xcode
+- `npm run android` — run on Android device/emulator
+- `npm run ios` — run on iOS simulator/device
+
 ## API Endpoints
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -45,6 +73,6 @@ cd frontend && npm install && npm run dev
 ## Roadmap
 - [ ] Real-time WebSocket driver tracking
 - [ ] Payment integration
-- [ ] Mobile app (React Native)
+- [x] Mobile app (Android & iOS via Capacitor)
 - [ ] XGBoost model upgrade
 - [ ] Kubernetes deployment

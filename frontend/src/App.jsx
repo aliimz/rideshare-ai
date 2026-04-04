@@ -5,6 +5,7 @@ import StatsBar from './components/StatsBar.jsx';
 import { getDrivers, matchRide, getPrice } from './services/api.js';
 import { useWebSocket } from './hooks/useWebSocket.js';
 import { useDriverSimulation } from './hooks/useDriverSimulation.js';
+import { Geolocation } from '@capacitor/geolocation';
 
 // Stable client ID for this browser tab (reused across re-renders)
 const WS_CLIENT_ID = `rider-${Math.random().toString(36).slice(2, 9)}`;
@@ -86,6 +87,7 @@ const App = () => {
   const [toasts,        setToasts]        = useState([]);
   const [usingMockData, setUsingMockData] = useState(false);
   const [mobileTab,     setMobileTab]     = useState('map'); // 'map' | 'panel'
+  const [riderPosition, setRiderPosition] = useState([RIDER_LAT, RIDER_LNG]);
 
   // ── WebSocket — real-time driver positions ────────────────────────────
   const { drivers: wsDrivers, connected: wsConnected } = useWebSocket(WS_CLIENT_ID);
@@ -127,6 +129,22 @@ const App = () => {
 
   const removeToast = useCallback((id) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  // ── Get real GPS position on native apps ────────────────────────────────
+  useEffect(() => {
+    const getPosition = async () => {
+      try {
+        const permission = await Geolocation.requestPermissions();
+        if (permission.location === 'granted' || permission.coarseLocation === 'granted') {
+          const pos = await Geolocation.getCurrentPosition({ enableHighAccuracy: true });
+          setRiderPosition([pos.coords.latitude, pos.coords.longitude]);
+        }
+      } catch {
+        // Fallback to default Lahore position
+      }
+    };
+    getPosition();
   }, []);
 
   // ── Load drivers on mount (REST baseline) ────────────────────────────────
@@ -206,7 +224,7 @@ const App = () => {
     <div className="flex flex-col h-screen w-screen bg-[#0f172a] overflow-hidden">
 
       {/* ── Header ──────────────────────────────────────────────────────── */}
-      <header className="flex-shrink-0 flex items-center justify-between px-5 py-3 bg-[#0f172a] border-b border-slate-700/60 z-10">
+      <header className="flex-shrink-0 flex items-center justify-between px-5 pt-[env(safe-area-inset-top)] pb-3 bg-[#0f172a] border-b border-slate-700/60 z-10">
         {/* Logo */}
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-green-500/20 border border-green-500/30 flex items-center justify-center text-xl">
@@ -285,6 +303,7 @@ const App = () => {
           <MapView
             drivers={drivers}
             matchedDriver={matchedDriver}
+            riderPosition={riderPosition}
           />
 
           {/* Map overlay: model info badge — hidden on small screens */}
@@ -329,7 +348,7 @@ const App = () => {
       </div>
 
       {/* ── Mobile bottom tab bar (hidden on md+) ───────────────────────── */}
-      <nav className="md:hidden flex-shrink-0 flex border-t border-slate-700/60 bg-[#1e293b]">
+      <nav className="md:hidden flex-shrink-0 flex border-t border-slate-700/60 bg-[#1e293b] pb-[env(safe-area-inset-bottom)]">
         <button
           onClick={() => setMobileTab('map')}
           className={`flex-1 flex flex-col items-center justify-center py-3 gap-0.5 text-xs font-medium transition-colors
@@ -352,7 +371,7 @@ const App = () => {
       </nav>
 
       {/* ── Toast stack ─────────────────────────────────────────────────── */}
-      <div className="fixed bottom-16 md:bottom-6 left-1/2 -translate-x-1/2 z-[2000] flex flex-col gap-2 items-center">
+      <div className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] md:bottom-6 left-1/2 -translate-x-1/2 z-[2000] flex flex-col gap-2 items-center">
         {toasts.map((toast) => (
           <Toast
             key={toast.id}
