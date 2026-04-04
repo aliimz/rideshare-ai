@@ -1,26 +1,33 @@
 """
 Ride management endpoints: create, retrieve, status update, and history.
 
-Uses an in-memory store (dict keyed by ride_id) in place of a real database.
+Uses PostgreSQL via AsyncSession + RideRepository.
 """
 
-import uuid
-from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from backend.core.dependencies import get_current_user, require_driver, require_rider
+from backend.db.database import get_db
+from backend.db.models import Driver, RideStatus
+from backend.db.repositories import RideRepository
 
 router = APIRouter(prefix="/rides", tags=["rides"])
 
-# ---------------------------------------------------------------------------
-# In-memory ride store  {ride_id: ride_record}
-# ---------------------------------------------------------------------------
-_rides: dict[str, dict] = {}
+StatusLiteral = Literal["requested", "accepted", "in_progress", "completed", "cancelled"]
 
-RideStatus = Literal["requested", "accepted", "in_progress", "completed", "cancelled"]
+# Map incoming status strings to RideStatus enum values
+_STATUS_MAP: dict[str, RideStatus] = {
+    "requested": RideStatus.requested,
+    "accepted": RideStatus.matched,      # "accepted" by driver = "matched" in DB
+    "in_progress": RideStatus.in_progress,
+    "completed": RideStatus.completed,
+    "cancelled": RideStatus.cancelled,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -29,23 +36,23 @@ RideStatus = Literal["requested", "accepted", "in_progress", "completed", "cance
 
 
 class CreateRideRequest(BaseModel):
-    pickup_lat: float = Field(..., ge=-90, le=90, description="Pickup latitude")
-    pickup_lng: float = Field(..., ge=-180, le=180, description="Pickup longitude")
-    dropoff_lat: float = Field(..., ge=-90, le=90, description="Dropoff latitude")
-    dropoff_lng: float = Field(..., ge=-180, le=180, description="Dropoff longitude")
+    pickup_lat: float = Field(..., ge=-90, le=90)
+    pickup_lng: float = Field(..., ge=-180, le=180)
+    dropoff_lat: float = Field(..., ge=-90, le=90)
+    dropoff_lng: float = Field(..., ge=-180, le=180)
     pickup_address: str = Field(..., min_length=1)
     dropoff_address: str = Field(..., min_length=1)
     vehicle_type: Literal["economy", "comfort", "xl"] = "economy"
 
 
 class UpdateStatusRequest(BaseModel):
-    status: RideStatus
+    status: StatusLiteral
 
 
 class RideResponse(BaseModel):
-    id: str
-    rider_id: str
-    driver_id: str | None
+    id: int
+    rider_id: int
+    driver_id: int | None
     pickup_lat: float
     pickup_lng: float
     dropoff_lat: float
@@ -59,19 +66,6 @@ class RideResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Helper
-# ---------------------------------------------------------------------------
-
-
-def _ride_to_response(ride: dict) -> RideResponse:
-    return RideResponse(**ride)
-
-
-def _utcnow() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-# ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
 
@@ -82,59 +76,42 @@ def _utcnow() -> str:
     status_code=status.HTTP_201_CREATED,
     summary="Request a new ride (rider only)",
 )
-def create_ride(
+async def create_ride(
     body: CreateRideRequest,
     current_user: dict = Depends(require_rider),
+    db: AsyncSession = Depends(get_db),
 ) -> RideResponse:
-    """
-    Create a new ride request for the authenticated rider.
+    """Create a new ride request. Initial status is ``requested``."""
+    rider_id = int(current_user["sub"])
+    repo = RideRepository(db)
 
-    The initial status is ``requested``.
-    """
-    now = _utcnow()
-    ride_id = str(uuid.uuid4())
-    ride: dict = {
-        "id": ride_id,
-        "rider_id": current_user["sub"],
-        "driver_id": None,
-        "pickup_lat": body.pickup_lat,
-        "pickup_lng": body.pickup_lng,
-        "dropoff_lat": body.dropoff_lat,
-        "dropoff_lng": body.dropoff_lng,
-        "pickup_address": body.pickup_address,
-        "dropoff_address": body.dropoff_address,
-        "vehicle_type": body.vehicle_type,
-        "status": "requested",
-        "created_at": now,
-        "updated_at": now,
-    }
-    _rides[ride_id] = ride
-    return _ride_to_response(ride)
+    ride = await repo.create(
+        rider_id=rider_id,
+        pickup_lat=body.pickup_lat,
+        pickup_lng=body.pickup_lng,
+        dropoff_lat=body.dropoff_lat,
+        dropoff_lng=body.dropoff_lng,
+        pickup_address=body.pickup_address,
+        dropoff_address=body.dropoff_address,
+    )
+
+    return _to_response(ride, body.pickup_address, body.dropoff_address, body.vehicle_type)
 
 
 @router.get(
     "/history",
     response_model=list[RideResponse],
-    summary="Retrieve the authenticated rider's ride history",
+    summary="Retrieve the authenticated user's ride history",
 )
-def ride_history(
+async def ride_history(
     current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> list[RideResponse]:
-    """
-    Return all rides belonging to the authenticated user.
-
-    Both riders (filtered by ``rider_id``) and drivers (filtered by
-    ``driver_id``) can call this endpoint.
-    """
-    user_id = current_user["sub"]
-    role = current_user.get("role")
-
-    if role == "driver":
-        matching = [r for r in _rides.values() if r.get("driver_id") == user_id]
-    else:
-        matching = [r for r in _rides.values() if r["rider_id"] == user_id]
-
-    return [_ride_to_response(r) for r in matching]
+    """Return all rides belonging to the authenticated user."""
+    user_id = int(current_user["sub"])
+    repo = RideRepository(db)
+    rides = await repo.get_rider_history(user_id)
+    return [_to_response(r) for r in rides]
 
 
 @router.get(
@@ -142,34 +119,35 @@ def ride_history(
     response_model=RideResponse,
     summary="Retrieve a single ride by ID",
 )
-def get_ride(
-    ride_id: str,
+async def get_ride(
+    ride_id: int,
     current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> RideResponse:
-    """
-    Return details for *ride_id*.
+    """Return details for *ride_id*. Raises 404 if not found, 403 if not a participant."""
+    repo = RideRepository(db)
+    ride = await repo.find_by_id(ride_id)
 
-    Raises HTTP 404 if the ride does not exist.
-    Raises HTTP 403 if the caller is neither the rider nor the assigned driver.
-    """
-    ride = _rides.get(ride_id)
     if ride is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Ride '{ride_id}' not found.",
         )
 
-    user_id = current_user["sub"]
-    is_participant = (
-        ride["rider_id"] == user_id or ride.get("driver_id") == user_id
-    )
-    if not is_participant:
+    user_id = int(current_user["sub"])
+    role = current_user.get("role")
+
+    # Riders can only see their own rides; drivers can see rides assigned to them
+    is_rider_owner = (ride.rider_id == user_id)
+    is_assigned_driver = (ride.driver_id is not None and role == "driver")
+
+    if not (is_rider_owner or is_assigned_driver):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have access to this ride.",
         )
 
-    return _ride_to_response(ride)
+    return _to_response(ride)
 
 
 @router.patch(
@@ -177,47 +155,84 @@ def get_ride(
     response_model=RideResponse,
     summary="Update ride status (driver only)",
 )
-def update_ride_status(
-    ride_id: str,
+async def update_ride_status(
+    ride_id: int,
     body: UpdateStatusRequest,
     current_user: dict = Depends(require_driver),
+    db: AsyncSession = Depends(get_db),
 ) -> RideResponse:
     """
     Allow an authenticated driver to update the status of *ride_id*.
 
-    - When a driver sets status to ``accepted``, their ``driver_id`` is
-      recorded on the ride.
-    - Raises HTTP 404 if the ride does not exist.
-    - Raises HTTP 409 if a different driver has already accepted the ride.
+    When status becomes ``accepted``, the driver's DB record is linked to the ride.
     """
-    ride = _rides.get(ride_id)
+    repo = RideRepository(db)
+    ride = await repo.find_by_id(ride_id)
+
     if ride is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Ride '{ride_id}' not found.",
         )
 
-    driver_id = current_user["sub"]
+    user_id = int(current_user["sub"])
+    new_status = _STATUS_MAP.get(body.status, RideStatus.requested)
 
-    # Prevent a second driver from hijacking an already-accepted ride.
-    if (
-        ride.get("driver_id") is not None
-        and ride["driver_id"] != driver_id
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="This ride has already been accepted by another driver.",
-        )
-
-    updated_ride = {
-        **ride,
-        "status": body.status,
-        "updated_at": _utcnow(),
-    }
-
-    # Assign driver when they accept the ride.
+    # Resolve user_id → driver_id for the assignment
+    driver_db_id: int | None = None
     if body.status == "accepted":
-        updated_ride = {**updated_ride, "driver_id": driver_id}
+        result = await db.execute(
+            select(Driver).where(Driver.user_id == user_id)
+        )
+        driver_record = result.scalar_one_or_none()
+        if driver_record is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Driver profile not found for this user.",
+            )
 
-    _rides[ride_id] = updated_ride
-    return _ride_to_response(updated_ride)
+        # Prevent another driver hijacking an already-accepted ride
+        if ride.driver_id is not None and ride.driver_id != driver_record.id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This ride has already been accepted by another driver.",
+            )
+
+        driver_db_id = driver_record.id
+
+    updated = await repo.update_status(ride_id, status=new_status, driver_id=driver_db_id)
+    if updated is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ride not found.")
+
+    return _to_response(updated)
+
+
+# ---------------------------------------------------------------------------
+# Helper
+# ---------------------------------------------------------------------------
+
+
+def _to_response(
+    ride,
+    pickup_address: str = "",
+    dropoff_address: str = "",
+    vehicle_type: str = "economy",
+) -> RideResponse:
+    """Convert an ORM Ride instance to a RideResponse."""
+    return RideResponse(
+        id=ride.id,
+        rider_id=ride.rider_id,
+        driver_id=ride.driver_id,
+        pickup_lat=ride.pickup_lat,
+        pickup_lng=ride.pickup_lng,
+        dropoff_lat=ride.dropoff_lat,
+        dropoff_lng=ride.dropoff_lng,
+        pickup_address=ride.pickup_address or pickup_address,
+        dropoff_address=ride.dropoff_address or dropoff_address,
+        vehicle_type=vehicle_type,
+        status=ride.status.value if hasattr(ride.status, "value") else str(ride.status),
+        created_at=ride.requested_at.isoformat() if ride.requested_at else "",
+        updated_at=(
+            ride.completed_at or ride.matched_at or ride.requested_at
+        ).isoformat() if ride.requested_at else "",
+    )

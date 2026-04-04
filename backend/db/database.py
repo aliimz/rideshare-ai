@@ -9,7 +9,6 @@ Usage:
         async def my_route(db: AsyncSession = Depends(get_db)): ...
 """
 
-import os
 from collections.abc import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import (
@@ -19,13 +18,18 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.orm import DeclarativeBase
 
+from backend.core.config import settings
+
 # ---------------------------------------------------------------------------
 # Connection URL
+# Railway provides postgresql:// but asyncpg requires postgresql+asyncpg://
 # ---------------------------------------------------------------------------
 
-DATABASE_URL: str = os.getenv(
-    "DATABASE_URL",
-    "postgresql+asyncpg://postgres:postgres@localhost:5432/rideshare",
+_raw_url = settings.DATABASE_URL
+DATABASE_URL: str = (
+    _raw_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    if _raw_url.startswith("postgresql://")
+    else _raw_url
 )
 
 # ---------------------------------------------------------------------------

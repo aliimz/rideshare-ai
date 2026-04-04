@@ -146,6 +146,8 @@ class Ride(Base):
     pickup_lng: Mapped[float] = mapped_column(Float, nullable=False)
     dropoff_lat: Mapped[float] = mapped_column(Float, nullable=False)
     dropoff_lng: Mapped[float] = mapped_column(Float, nullable=False)
+    pickup_address: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    dropoff_address: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     # Fare
     fare_amount: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)

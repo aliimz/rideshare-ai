@@ -1,24 +1,21 @@
 """
 Authentication endpoints: register, login, and current-user lookup.
 
-Uses an in-memory store (dict keyed by email) in place of a real database.
+Uses PostgreSQL via AsyncSession + UserRepository.
 """
 
-import uuid
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.core.dependencies import get_current_user
 from backend.core.security import create_access_token, hash_password, verify_password
+from backend.db.database import get_db
+from backend.db.repositories import UserRepository
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-
-# ---------------------------------------------------------------------------
-# In-memory user store  {email: user_record}
-# ---------------------------------------------------------------------------
-_users: dict[str, dict] = {}
 
 
 # ---------------------------------------------------------------------------
@@ -55,44 +52,52 @@ class TokenResponse(BaseModel):
     status_code=status.HTTP_201_CREATED,
     summary="Register a new user",
 )
-def register(body: RegisterRequest) -> TokenResponse:
+async def register(
+    body: RegisterRequest,
+    db: AsyncSession = Depends(get_db),
+) -> TokenResponse:
     """
-    Create a new user account.  Returns a JWT access token on success.
+    Create a new user account. Returns a JWT access token on success.
 
     Raises HTTP 409 if the email address is already registered.
     """
-    if body.email in _users:
+    repo = UserRepository(db)
+
+    existing = await repo.find_by_email(body.email)
+    if existing is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="An account with this email already exists.",
         )
 
-    user_id = str(uuid.uuid4())
-    user_record = {
-        "id": user_id,
-        "email": body.email,
-        "full_name": body.full_name,
-        "phone": body.phone,
-        "role": body.role,
-        "hashed_password": hash_password(body.password),
-    }
-    _users[body.email] = user_record
+    user = await repo.create(
+        email=body.email,
+        password_hash=hash_password(body.password),
+        full_name=body.full_name,
+        phone=body.phone,
+        role=body.role,
+    )
 
     token = create_access_token(
-        {"sub": user_id, "email": body.email, "role": body.role}
+        {"sub": str(user.id), "email": user.email, "role": user.role}
     )
     return TokenResponse(access_token=token)
 
 
 @router.post("/login", response_model=TokenResponse, summary="Obtain a JWT token")
-def login(body: LoginRequest) -> TokenResponse:
+async def login(
+    body: LoginRequest,
+    db: AsyncSession = Depends(get_db),
+) -> TokenResponse:
     """
-    Authenticate with email and password.  Returns a JWT access token.
+    Authenticate with email and password. Returns a JWT access token.
 
     Raises HTTP 401 on invalid credentials.
     """
-    user = _users.get(body.email)
-    if user is None or not verify_password(body.password, user["hashed_password"]):
+    repo = UserRepository(db)
+    user = await repo.find_by_email(body.email)
+
+    if user is None or not verify_password(body.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password.",
@@ -100,20 +105,23 @@ def login(body: LoginRequest) -> TokenResponse:
         )
 
     token = create_access_token(
-        {"sub": user["id"], "email": user["email"], "role": user["role"]}
+        {"sub": str(user.id), "email": user.email, "role": str(user.role.value)}
     )
     return TokenResponse(access_token=token)
 
 
 @router.get("/me", summary="Return the authenticated user's profile")
-def me(current_user: dict = Depends(get_current_user)) -> dict:
+async def me(
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
     """
     Return public profile fields for the currently authenticated user.
-
-    Raises HTTP 404 if the user record no longer exists (e.g. after a restart).
     """
-    email = current_user.get("email")
-    user = _users.get(email) if email else None
+    user_id = int(current_user["sub"])
+    repo = UserRepository(db)
+    user = await repo.find_by_id(user_id)
+
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -121,9 +129,9 @@ def me(current_user: dict = Depends(get_current_user)) -> dict:
         )
 
     return {
-        "id": user["id"],
-        "email": user["email"],
-        "full_name": user["full_name"],
-        "phone": user["phone"],
-        "role": user["role"],
+        "id": user.id,
+        "email": user.email,
+        "full_name": user.full_name,
+        "phone": user.phone,
+        "role": user.role,
     }
